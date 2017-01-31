@@ -1,0 +1,267 @@
+rm(list=ls()) #clean workspace
+
+######################################
+#            Read data               #
+######################################
+###training data
+donnees="U:/201608NextGenDecisionEngine/BoN/201608 Azure/BankOfNanjing/Data/At 60days/AvecTODU/MicrosoftAzureAt60DaysFebMay.csv"
+db=read.csv(donnees)
+head(db)
+summary(db)
+
+###testing data (ideally next month)
+donneesJuin="U:/201608NextGenDecisionEngine/BoN/201608 Azure/BankOfNanjing/Data/At 60days/AvecTODU/MicrosoftAzureAt60DaysJuly.csv"
+dbJ=read.csv(donneesJuin)
+head(dbJ)
+summary(dbJ)
+
+
+#########################################
+#     Preparation of training data      #
+#########################################
+
+### Transformation of numeric data into categorical ###
+db$Cust_Region=as.factor(db$Cust_Region)
+db$regularized=as.factor(db$regularized) ###response variable
+summary(db)
+
+
+### Removing some variables:
+#     Loanacno
+#     Amt_Last_Pmt       
+#     Total_Pmt_Since_Entry
+#     Perc_remaining_Balance
+db=db[,-c(1,14,15,20)]
+summary(db)
+
+
+### I just keep CYD product ###
+db=db[db$Product_Type=="CYD",]
+db=db[,-c(2)]
+summary(db)
+dim(db)
+
+
+#########################################
+#    Preparation of validation data     #
+#########################################
+
+### Transformation of numeric variables into categorical ###
+dbJ$Cust_Region=as.factor(dbJ$Cust_Region)
+dbJ$regularized=as.factor(dbJ$regularized)
+summary(dbJ)
+
+
+### Removing some variables:
+#     Loanacno
+#     Amt_Last_Pmt       
+#     Total_Pmt_Since_Entry
+#     Perc_remaining_Balance
+dbJ=dbJ[,-c(1,14,15,20)]
+summary(dbJ)
+
+
+### I just keep CYD product ###
+dbJ=dbJ[dbJ$Product_Type=="CYD",]
+dbJ=dbJ[,-c(2)]
+summary(dbJ)
+dim(dbJ)
+
+
+###############################################
+#            Graphic: Azure curve             #
+###############################################
+
+### Abscissa ###
+x=c(0,5,10,20,30,40,50,60,70,80,90,100)
+
+### Ordinate ###
+y0=c(0,26.4,45.1,58.3,66.7,74.3,81.9,86.1,87.5,92.4,97.9,100) #put here your proportion of bad files in each decile from the Azure model
+
+plot(x,y0, col="purple", type="n", xlab="%Population",ylab="%Mauvais",main="Validation sur M+2 (juillet)", cex=3, cex.lab=1.8)
+lines(x, y0, col="purple")
+
+### Decile (for later) ###
+bads=dim(dbJ[dbJ$regularized=='1',])[1]  #bad files
+l=dim(dbJ)[1]
+dec=l/10
+
+
+
+
+
+#########################################################
+#      Model: decision tree with oversampling           #
+#########################################################
+library(rpart)
+
+### Oversampling ###
+badFiles=db[db$regularized=="1",]
+goodFiles=db[db$regularized=="0",]
+dbOversample=db
+for(i in 1:30)  
+{
+ dbOversample=rbind(dbOversample,badFiles)
+}
+summary(dbOversample) #look at the number of good and bad files (variable regularized)
+                      #change the number 30 in order to have more or less the same number of good and bad
+
+
+### Model ###
+modelArbre=rpart(regularized~. , data=dbOversample, method="class")
+fit=modelArbre
+printcp(fit) # display the results
+
+# prune the tree
+pfit<- prune(fit, cp=   fit$cptable[which.min(fit$cptable[,"xerror"]),"CP"])
+
+
+# plot the pruned tree
+#plot(pfit, uniform=TRUE,main="Pruned Classification Tree")
+#text(pfit, use.n=TRUE, all=TRUE, cex=.8)
+post(pfit, file = "U:/201608NextGenDecisionEngine/BoN/201610R/ptree.ps",title = "Pruned Classification Tree")
+
+### Validations on validation data ###
+preds2=as.vector(predict(pfit, newdata=dbJ))
+preds2True=as.vector(preds2[(l+1):(2*l)])
+dbPreds2=cbind(dbJ,preds2True)
+ordPreds2=dbPreds2[order(preds2True,decreasing=TRUE),]
+
+
+### Curve ###
+dec5ov=ordPreds2[1:floor(dec/2),]
+ bad5ov=((dim(dec5ov[dec5ov$regularized=='1',])[1])/bads)*100
+dec10ov=ordPreds2[1:floor(dec),]
+ bad10ov=((dim(dec10ov[dec10ov$regularized=='1',])[1])/bads)*100
+dec20ov=ordPreds2[1:floor(2*dec),]
+ bad20ov=((dim(dec20ov[dec20ov$regularized=='1',])[1])/bads)*100
+dec30ov=ordPreds2[1:floor(3*dec),]
+ bad30ov=((dim(dec30ov[dec30ov$regularized=='1',])[1])/bads)*100
+dec40ov=ordPreds2[1:floor(4*dec),]
+ bad40ov=((dim(dec40ov[dec40ov$regularized=='1',])[1])/bads)*100
+dec50ov=ordPreds2[1:floor(5*dec),]
+ bad50ov=((dim(dec50ov[dec50ov$regularized=='1',])[1])/bads)*100
+dec60ov=ordPreds2[1:floor(6*dec),]
+ bad60ov=((dim(dec60ov[dec60ov$regularized=='1',])[1])/bads)*100
+dec70ov=ordPreds2[1:floor(7*dec),]
+ bad70ov=((dim(dec70ov[dec70ov$regularized=='1',])[1])/bads)*100
+dec80ov=ordPreds2[1:floor(8*dec),]
+ bad80ov=((dim(dec80ov[dec80ov$regularized=='1',])[1])/bads)*100
+dec90ov=ordPreds2[1:floor(9*dec),]
+ bad90ov=((dim(dec90ov[dec90ov$regularized=='1',])[1])/bads)*100
+dec100ov=ordPreds2
+ bad100ov=((dim(dec100ov[dec100ov$regularized=='1',])[1])/bads)*100
+y_ov=c(0,bad5ov,bad10ov,bad20ov,bad30ov,bad40ov,bad50ov,bad60ov,bad70ov,bad80ov,bad90ov,bad100ov)
+lines(x, y_ov, col="blue")
+
+
+### Plot segments ###
+library(calibrate)
+seg_x=c(8.7, 3.4+8.7)
+seg_y=c(39.6, 6.9+39.6)
+points(seg_x,seg_y, pch=15, col="blue")
+tags=c("CART:Segment 1", "CART:Segments 1+2")
+textxy(seg_x, seg_y, tags, cex=0.8)
+
+#########################################################
+#    Model: logistic regression with oversampling       #
+#########################################################
+
+### Model ###
+modelRegLog2=glm(regularized~. , data=dbOversample, family="binomial")
+
+
+### Validations on validation data ###
+preds2=as.vector(predict(modelRegLog2, newdata=dbJ, type="response"))
+dbPreds2=cbind(dbJ,preds2)
+ordPreds2=dbPreds2[order(preds2,decreasing=TRUE),]
+
+
+### Curve ###
+dec5ov=ordPreds2[1:floor(dec/2),]
+ bad5ov=((dim(dec5ov[dec5ov$regularized=='1',])[1])/bads)*100
+dec10ov=ordPreds2[1:floor(dec),]
+ bad10ov=((dim(dec10ov[dec10ov$regularized=='1',])[1])/bads)*100
+dec20ov=ordPreds2[1:floor(2*dec),]
+ bad20ov=((dim(dec20ov[dec20ov$regularized=='1',])[1])/bads)*100
+dec30ov=ordPreds2[1:floor(3*dec),]
+ bad30ov=((dim(dec30ov[dec30ov$regularized=='1',])[1])/bads)*100
+dec40ov=ordPreds2[1:floor(4*dec),]
+ bad40ov=((dim(dec40ov[dec40ov$regularized=='1',])[1])/bads)*100
+dec50ov=ordPreds2[1:floor(5*dec),]
+ bad50ov=((dim(dec50ov[dec50ov$regularized=='1',])[1])/bads)*100
+dec60ov=ordPreds2[1:floor(6*dec),]
+ bad60ov=((dim(dec60ov[dec60ov$regularized=='1',])[1])/bads)*100
+dec70ov=ordPreds2[1:floor(7*dec),]
+ bad70ov=((dim(dec70ov[dec70ov$regularized=='1',])[1])/bads)*100
+dec80ov=ordPreds2[1:floor(8*dec),]
+ bad80ov=((dim(dec80ov[dec80ov$regularized=='1',])[1])/bads)*100
+dec90ov=ordPreds2[1:floor(9*dec),]
+ bad90ov=((dim(dec90ov[dec90ov$regularized=='1',])[1])/bads)*100
+dec100ov=ordPreds2
+ bad100ov=((dim(dec100ov[dec100ov$regularized=='1',])[1])/bads)*100
+y1ov=c(0,bad5ov,bad10ov,bad20ov,bad30ov,bad40ov,bad50ov,bad60ov,bad70ov,bad80ov,bad90ov,bad100ov)
+lines(x, y1ov, col="red")
+
+
+
+
+
+
+
+
+#########################################################
+#       Model: random forest with oversampling          #
+#########################################################
+library(randomForest)
+
+### Model ###
+set.seed(333)
+modelForet=randomForest(regularized~. , data=dbOversample, importance=TRUE, ntree=500)
+fit=modelForet
+#varImpPlot(fit)  #variable importance
+
+### Validations ###
+preds3=as.vector(predict(modelForet, newdata=dbJ, type="prob"))
+preds3True=as.vector(preds3[(l+1):(l*2)])
+dbPreds3=cbind(dbJ,preds3True)
+ordPreds3=dbPreds3[order(preds3True,decreasing=TRUE),]
+
+
+### Curve ###
+dec5ov=ordPreds3[1:floor(dec/2),]
+ bad5ov=((dim(dec5ov[dec5ov$regularized=='1',])[1])/bads)*100
+dec10ov=ordPreds3[1:floor(dec),]
+ bad10ov=((dim(dec10ov[dec10ov$regularized=='1',])[1])/bads)*100
+dec20ov=ordPreds3[1:floor(2*dec),]
+ bad20ov=((dim(dec20ov[dec20ov$regularized=='1',])[1])/bads)*100
+dec30ov=ordPreds3[1:floor(3*dec),]
+ bad30ov=((dim(dec30ov[dec30ov$regularized=='1',])[1])/bads)*100
+dec40ov=ordPreds3[1:floor(4*dec),]
+ bad40ov=((dim(dec40ov[dec40ov$regularized=='1',])[1])/bads)*100
+dec50ov=ordPreds3[1:floor(5*dec),]
+ bad50ov=((dim(dec50ov[dec50ov$regularized=='1',])[1])/bads)*100
+dec60ov=ordPreds3[1:floor(6*dec),]
+ bad60ov=((dim(dec60ov[dec60ov$regularized=='1',])[1])/bads)*100
+dec70ov=ordPreds3[1:floor(7*dec),]
+ bad70ov=((dim(dec70ov[dec70ov$regularized=='1',])[1])/bads)*100
+dec80ov=ordPreds3[1:floor(8*dec),]
+ bad80ov=((dim(dec80ov[dec80ov$regularized=='1',])[1])/bads)*100
+dec90ov=ordPreds3[1:floor(9*dec),]
+ bad90ov=((dim(dec90ov[dec90ov$regularized=='1',])[1])/bads)*100
+dec100ov=ordPreds3
+ bad100ov=((dim(dec100ov[dec100ov$regularized=='1',])[1])/bads)*100
+y2ov=c(0,bad5ov,bad10ov,bad20ov,bad30ov,bad40ov,bad50ov,bad60ov,bad70ov,bad80ov,bad90ov,bad100ov)
+lines(x, y2ov, col="black")
+
+
+
+legend("bottomright", legend=c("Azure benchmark (decision tree)","Decision Tree","Logistic Regression","Random Forest"), col=c("purple","blue","red","black"),lty=1)
+
+
+
+
+
+
+
+
